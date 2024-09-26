@@ -1,0 +1,125 @@
+int EN1 = 6;   // EN! is for forward of left side 
+ int EN2= 9;   // EN2 is for reverse of left side 
+ int EN3 = 10;   // En3 is for forward Right side
+ int EN4 = 11;   // EN4 is for Reverse Right side
+
+ int channel1 = 3;
+ int channel2 = 5;
+ int channelM = 4;
+
+ int LR ; 
+ int FB ; 
+ int M;
+
+ int MotorSpeedFB;
+ int MotorSpeedLR;
+
+ void setup ()
+ {
+  pinMode (EN1, OUTPUT);
+  pinMode (EN2, OUTPUT);
+  pinMode (EN3, OUTPUT);
+  pinMode (EN4, OUTPUT);
+  pinMode (channel1, INPUT);
+  pinMode (channel2, INPUT);
+  pinMode(channelM, INPUT);
+  Serial.begin (9600); 
+ }
+
+ void loop ()
+{
+  LR = (pulseIn (channel1, HIGH)); 
+
+  FB = (pulseIn (channel2, HIGH)); 
+
+ // M = (pulseIn(channelM,HIGH));
+
+  MotorSpeedFB = map(FB, 950,2100,-255,255);
+  MotorSpeedLR = map(LR, 950,2100,-255,255);
+
+int MSFB = MotorSpeedFB;
+int MSLR = MotorSpeedLR;
+ Serial.print(LR); 
+ Serial.print("\t");
+ Serial.println(FB); 
+
+ Serial.print("\t");
+ Serial.print(MSFB);
+ Serial.print("\t");
+ Serial.print(MSLR);
+ Serial.print("\t");
+ Serial.print( " channel m = "+ M);
+ Serial.print("\t");
+
+ if ((MSLR> -35 && MSLR < 0) && (MSFB > -30 && MSFB < 0))
+ {
+   analogWrite (EN1, 0); 
+   analogWrite (EN2, 0);
+   analogWrite (EN3, 0); 
+   analogWrite (EN4, 0);
+   
+ }
+ if (MSLR > 20) // Bot goes Right
+ {
+   /*
+  digitalWrite (EN1, MSLR); 
+  digitalWrite (EN2, 0);
+  digitalWrite (EN3, 0); 
+  digitalWrite (EN4, MSLR); //
+  
+  */
+  analogWrite(EN1, 0);
+  analogWrite(EN2, MSLR);
+  analogWrite(EN3, 0);
+  analogWrite(EN4, MSLR);
+
+ }
+ if (MSLR < -10)  // Bot goes Left
+ {
+   /*
+  digitalWrite (EN1, 0); 
+  digitalWrite (EN2, 0);
+  digitalWrite (EN3, MSLR); //
+  digitalWrite (EN4, 0);
+
+*/
+  analogWrite(EN1, -MSLR);
+  analogWrite(EN2, 0);
+  analogWrite(EN3, -MSLR);
+  analogWrite(EN4, 0);
+
+ }
+
+
+ if (MSFB > 10) // Bot goes Forward
+ {
+  /*
+  digitalWrite (EN1, MSFB); 
+  digitalWrite (EN2, 0);
+  digitalWrite (EN3, MSFB); 
+  digitalWrite (EN4, 0);
+
+*/
+  analogWrite(EN1, 0);
+  analogWrite(EN2, MSFB);
+  analogWrite(EN3, MSFB);
+  analogWrite(EN4, 0);
+  
+ }
+
+ if (MSFB < -35) // Bot goes back
+ {/*
+  digitalWrite (EN1, 0); 
+  digitalWrite (EN2, MSFB);
+  digitalWrite (EN3, 0); 
+  digitalWrite (EN4, MSFB);
+
+*/
+  analogWrite(EN1, -MSFB);
+  analogWrite(EN2, 0);
+  analogWrite(EN3, 0);
+  analogWrite(EN4, -MSFB);
+  
+  }
+
+ }
