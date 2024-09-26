@@ -1,0 +1,222 @@
+#include <QTRSensors.h>
+#include <SparkFun_TB6612.h>
+#include <BluetoothSerial.h>
+
+// Motor pins
+#define RIN2 22  // Right motor direction pin 1
+#define RIN1 21  // Right motor direction pin 2
+#define RPWM 23  // Right motor PWM pin
+#define LIN2 33  // Left motor direction pin 1
+#define LIN1 25  // Left motor direction pin 2
+#define LPWM 32  // Left motor PWM pin
+#define RBUT 35  // Right button pin
+#define LBUT 34  // Left button pin
+
+// IR Sensor
+const uint8_t array_size = 10;
+uint16_t sensor_values[array_size];
+ 
+// PID calculation variables
+int last_error = 0;                            // Last error value for PID calculation
+int I = 0;                              // PID terms
+float Kp = 2.5, Ki = 0.00, Kd = 30.00;             // PID constants
+int center_position = 4500;                    // Default center position
+uint8_t MAX_SPEED_R = 130, MAX_SPEED_L = 130;    // Maximum speed for motors
+uint8_t BASE_SPEED_R = 110, BASE_SPEED_L = 131100;  // Base speed for motors
+
+// Create QTR object for IR
+QTRSensors qtr;
+
+// Create Bluetooth serial object
+BluetoothSerial SerialBT;
+
+// Create motor objects
+Motor motor_r = Motor(RIN1, RIN2, RPWM, -1, 99);  // Right motor
+Motor motor_l = Motor(LIN1, LIN2, LPWM, -1, 99);  // Left motorl
+
+/**
+ * @brief Sets the speed for both motors.
+ * 
+ * @param set_speed_r Speed to set for the right motor (0-255).
+ * @param set_speed_l Speed to set for the left motor (0-255).
+ * @references SparkFun_TB6612::drive
+ */
+void set_motor_speed(int set_speed_r, int set_speed_l) {
+  motor_r.drive(set_speed_r);
+  motor_l.drive(set_speed_l);
+}
+
+/**
+ * @brief Calculates the PID control and adjusts motor speeds accordingly.
+ * 
+ * Reads the line position from QTRSensors, computes the PID values, and adjusts
+ * the speeds of the motors to keep the robot centered on the line.
+ * 
+ * @references QTRSensors::readLineBlack, constrain
+ */
+void pid_control() {
+    // Read the line position using the QTR sensor
+    uint16_t position = qtr.readLineBlack(sensor_values);
+    
+    // Calculate the error (difference from the center position)
+    int error = center_position - position;
+    
+    // PID calculations
+    int P = error;
+    I += error;
+    int D = error - last_error;
+    last_error = error;
+
+    // Calculate the motor speed adjustment based on PID values
+    int motorSpeed = P * Kp + I * Ki + D * Kd;
+
+    // Calculate the final speed for each motor
+    int rightMotorSpeed = BASE_SPEED_R + motorSpeed;
+    int leftMotorSpeed = BASE_SPEED_L - motorSpeed;
+
+    // Check if the calculated speeds exceed the maximum allowed speed
+    if (rightMotorSpeed > MAX_SPEED_R) {
+        rightMotorSpeed = MAX_SPEED_R;
+    }
+    if (leftMotorSpeed > MAX_SPEED_L) {
+        leftMotorSpeed = MAX_SPEED_L;
+    }
+    if (rightMotorSpeed < 0) {
+        rightMotorSpeed = 0;
+    }
+    if (leftMotorSpeed < 0) {
+        leftMotorSpeed = 0;
+    }
+
+    // Set the motor speeds using the updated mspeed function
+    mspeed(rightMotorSpeed, leftMotorSpeed);
+}
+
+/**
+ * @brief Sets the speed for both motors using the motor objects.
+ * 
+ * @param posa Speed to set for the right motor (0-255).
+ * @param posb Speed to set for the left motor (0-255).
+ * @references SparkFun_TB6612::drive
+ */
+void mspeed(int posa, int posb) {
+    motor_r.drive(posa);
+    motor_l.drive(posb);
+}
+
+
+/**
+ * @brief Initializes the hardware and performs calibration.
+ * 
+ * Sets up the pins for motors, IR sensors, and buttons. Also calibrates the
+ * IR sensors by running the motors in different directions.
+ * 
+ * @references QTRSensors::setTypeRC, QTRSensors::setSensorPins, Motor::brake
+ */
+void setup() {
+  // Setup IR sensors
+  qtr.setTypeRC();
+  qtr.setSensorPins((const uint8_t[]){ 14,13,27,26,5,17,16,4,19,18 }, array_size);// 18 , 19, 4, 16, 17, 5, 26, 27, 13, 14 
+
+  // Start Serial monitor and Bluetooth serial
+  Serial.begin(9600);
+  SerialBT.begin("ESP32-B");
+
+  // Setup Motor pins
+  pinMode(RIN1, OUTPUT);  // Right motor direction pin 1
+  pinMode(RIN2, OUTPUT);  // Right motor direction pin 2
+  pinMode(RPWM, OUTPUT);  // Right motor PWM pin
+  pinMode(LIN1, OUTPUT);  // Left motor direction pin 1
+  pinMode(LIN2, OUTPUT);  // Left motor direction pin 2
+  pinMode(LPWM, OUTPUT);  // Left motor PWM pin
+
+  // Initialize motors but stop initially
+  motor_r.brake();
+  motor_l.brake();
+  delay(2);
+
+  // Setup Buttons
+  pinMode(RBUT, INPUT);  // Right button
+  pinMode(LBUT, INPUT);  // Left button
+
+  // Calibrate IR sensors
+  delay(300);
+  for (int i = 0; i < 100; i++) {
+    set_motor_speed(50, -50);  // Clockwise calibration
+    qtr.calibrate();
+  }
+
+  for (int i = 0; i < 100; i++) {
+    set_motor_speed(-50, 50);  // Anticlockwise calibration
+    qtr.calibrate();
+  }
+}
+
+/**
+ * @brief Handles Bluetooth commands to update PID variables.
+ * 
+ * Parses the command received via Bluetooth and updates the corresponding
+ * PID variable based on the command received.
+ * 
+ * @param command The command received via Bluetooth.
+ */
+void bluetooth_command_handler(String command) {
+  command.trim();  // Remove any leading or trailing whitespace
+
+  if (command.startsWith("kp ")) {
+    float value = command.substring(3).toFloat();
+    Kp = value;
+    SerialBT.print("Kp updated to: ");
+    SerialBT.println(Kp);
+  } else if (command.startsWith("ki ")) {
+    float value = command.substring(3).toFloat();
+    Ki = value;
+    SerialBT.print("Ki updated to: ");
+    SerialBT.println(Ki);
+  } else if (command.startsWith("kd ")) {
+    float value = command.substring(3).toFloat();
+    Kd = value;
+    SerialBT.print("Kd updated to: ");
+    SerialBT.println(Kd);
+  } else if (command.startsWith("bsr ")) {
+    float value = command.substring(3).toFloat();
+    BASE_SPEED_R = value;
+    SerialBT.print("BASE_SPEED_R updated to: ");
+    SerialBT.println(BASE_SPEED_R);
+  } else if (command.startsWith("bsl ")) {
+    float value = command.substring(3).toFloat();
+    BASE_SPEED_L = value;
+    SerialBT.print("BASE_SPEED_L updated to: ");
+    SerialBT.println(BASE_SPEED_L);
+  } else if (command.startsWith("msr ")) {
+    float value = command.substring(3).toFloat();
+    MAX_SPEED_R = value;
+    SerialBT.print("MAX_SPEED_R updated to: ");
+    SerialBT.println(MAX_SPEED_R);
+  } else if (command.startsWith("msl ")) {
+    float value = command.substring(3).toFloat();
+    MAX_SPEED_L = value;
+    SerialBT.print("MAX_SPEED_L updated to: ");
+    SerialBT.println(MAX_SPEED_L);
+  } else {
+    SerialBT.println("Unknown command.");
+  }
+}
+
+/**
+ * @brief Main loop function to continuously run PID control.
+ * 
+ * This function is called repeatedly and performs PID control to keep the robot
+ * centered on the line.
+ * 
+ * @references pid_control
+ */
+void loop() {
+  pid_control();
+
+  // Check for Bluetooth serial commands
+  if (SerialBT.available()) {
+    String command = SerialBT.readStringUntil('\n');
+    bluetooth_command_handler(command);
+  }
+}
